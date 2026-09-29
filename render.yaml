@@ -3,27 +3,21 @@ databases:
     databaseName: ira_campus_db
     user: campus_admin
     plan: free
-    region: oregon
 
 services:
   # 1. Python FastAPI AI/ML Microservice
   - type: web
     name: ira-ai-service
     env: python
-    region: oregon
     plan: free
     rootDir: ai-service
     buildCommand: "pip install -r requirements.txt && python app/train.py"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.8
 
   # 2. Node.js Core Backend & WebSocket Service
   - type: web
     name: ira-backend
     env: node
-    region: oregon
     plan: free
     rootDir: backend
     buildCommand: "npm install"
