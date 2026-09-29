@@ -1,0 +1,68 @@
+databases:
+  - name: ira-postgres
+    databaseName: ira_campus_db
+    user: campus_admin
+    plan: free
+    region: oregon
+
+services:
+  # 1. Python FastAPI AI/ML Microservice
+  - type: web
+    name: ira-ai-service
+    env: python
+    region: oregon
+    plan: free
+    rootDir: ai-service
+    buildCommand: "pip install -r requirements.txt && python app/train.py"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+
+  # 2. Node.js Core Backend & WebSocket Service
+  - type: web
+    name: ira-backend
+    env: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ira-postgres
+          property: connectionString
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: ira-ai-service
+          property: host
+
+  # 3. React Vite Frontend (Static Site on Global CDN)
+  - type: web
+    name: ira-frontend
+    env: static
+    region: oregon
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: "./dist"
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: ira-backend
+          property: host
+      - key: VITE_SOCKET_URL
+        fromService:
+          type: web
+          name: ira-backend
+          property: host
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
