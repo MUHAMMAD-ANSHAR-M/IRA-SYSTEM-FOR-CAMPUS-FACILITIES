@@ -4,6 +4,31 @@
 
 ---
 
+# 🚀 Live Demo
+
+👉 **Visit the Website:**  
+[![Live Demo](https://img.shields.io/badge/Live-Demo-brigthgreen?style=for-the-badge)](https://ira-frontend.onrender.com/)
+
+
+## 👨‍💻 Authors
+
+**Mithilesh K R**
+
+GitHub: https://github.com/Mithilesh2510
+
+**Logeshwaran S S**
+
+GitHub: https://github.com/logesh0781
+
+**Muhammad Anshar M**
+
+GitHub: https://github.com/MUHAMMAD-ANSHAR-M
+
+**Madhan A R**
+
+GitHub: https://github.com/madhanar2008-collab
+
+---
 ## 1. System Overview & Problem Statement
 Campus facilities (classrooms, computer labs, seminar halls, auditoriums, and sports grounds) suffer from double bookings, last-minute timetable clashes, and massive capacity wastage (e.g., 20 people occupying a 200-seat hall while larger groups are turned away).
 
