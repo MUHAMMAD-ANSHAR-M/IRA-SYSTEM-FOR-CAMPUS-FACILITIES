@@ -152,7 +152,7 @@ async function initAndSeed() {
 
     for (const r of rules) {
         await db.query(
-            "INSERT OR IGNORE INTO allocation_rules (key, weight, description, is_active) VALUES (?, ?, ?, 1)",
+            "INSERT OR IGNORE INTO allocation_rules (key, weight, description, is_active) VALUES (?, ?, ?, TRUE)",
             [r.key, r.weight, r.desc]
         );
     }
@@ -237,7 +237,7 @@ async function initAndSeed() {
         await db.query(
             `INSERT OR IGNORE INTO bookings 
              (id, facility_id, user_id, title, purpose, expected_attendees, start_time, end_time, status, priority, allocated_by_engine, match_score, match_reasons)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?)`,
             [b.id, b.facility_id, b.user_id, b.title, b.purpose, b.expected_attendees, b.start_time, b.end_time, b.status, b.priority, b.score, JSON.stringify(["Optimal capacity fit", "All required equipment verified", "Zero timetable clashes"])]
         );
     }

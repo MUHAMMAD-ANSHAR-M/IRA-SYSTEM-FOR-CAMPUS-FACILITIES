@@ -43,7 +43,7 @@ app.get('/health', (req, res) => {
 async function start() {
     try {
         await initAndSeed();
-        server.listen(config.PORT, () => {
+        server.listen(config.PORT, '0.0.0.0', () => {
             console.log(`=======================================================`);
             console.log(`🚀 IRA Backend & Allocation Engine running on port ${config.PORT}`);
             console.log(`📡 WebSocket server active`);

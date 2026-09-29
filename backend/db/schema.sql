@@ -1,7 +1,5 @@
 -- Smart Campus Resource Management System (IRA)
--- PostgreSQL Production Schema with Exclusion Constraints for Guaranteed Zero Double-Bookings
-
-CREATE EXTENSION IF NOT EXISTS btree_gist;
+-- PostgreSQL Production Schema
 
 -- 1. Departments
 CREATE TABLE IF NOT EXISTS departments (
@@ -57,7 +55,7 @@ CREATE TABLE IF NOT EXISTS facility_equipment (
     PRIMARY KEY (facility_id, equipment_id)
 );
 
--- 6. Bookings (With Exclusion Constraint preventing temporal overlap on active bookings)
+-- 6. Bookings
 CREATE TABLE IF NOT EXISTS bookings (
     id VARCHAR(50) PRIMARY KEY,
     facility_id VARCHAR(50) NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
@@ -68,24 +66,37 @@ CREATE TABLE IF NOT EXISTS bookings (
     start_time TIMESTAMP WITH TIME ZONE NOT NULL,
     end_time TIMESTAMP WITH TIME ZONE NOT NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'CONFIRMED' CHECK (status IN ('PENDING', 'APPROVED', 'CONFIRMED', 'COMPLETED', 'REJECTED', 'CANCELLED', 'RESCHEDULED', 'PREEMPTED')),
-    priority INT NOT NULL DEFAULT 3, -- 1: Exams (Highest), 2: Regular Classes, 3: Faculty Seminars, 4: Club Events, 5: Casual (Lowest)
+    priority INT NOT NULL DEFAULT 3,
     approved_by VARCHAR(50) REFERENCES users(id),
     allocated_by_engine BOOLEAN DEFAULT FALSE,
     match_score NUMERIC(5,2),
     match_reasons JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT check_time_valid CHECK (end_time > start_time),
-    -- PostgreSQL GiST Exclusion Constraint: Guarantee no double-booking at DB level!
-    CONSTRAINT prevent_double_booking EXCLUDE USING gist (
-        facility_id WITH =,
-        tsrange(start_time, end_time) WITH &&
-    ) WHERE (status IN ('APPROVED', 'CONFIRMED'))
+    CONSTRAINT check_time_valid CHECK (end_time > start_time)
 );
 
--- Indexes for lightning fast range lookups
+-- Indexes for range lookups
 CREATE INDEX IF NOT EXISTS idx_bookings_facility_time ON bookings (facility_id, start_time, end_time);
 CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings (user_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status);
+
+-- Optional GiST Exclusion Constraint (applied if cloud environment allows btree_gist extension)
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS btree_gist;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'prevent_double_booking'
+    ) THEN
+        ALTER TABLE bookings ADD CONSTRAINT prevent_double_booking EXCLUDE USING gist (
+            facility_id WITH =,
+            tsrange(start_time, end_time) WITH &&
+        ) WHERE (status IN ('APPROVED', 'CONFIRMED'));
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Graceful fallback: application transaction-level locks enforce zero double-booking
+        RAISE NOTICE 'Skipped GiST exclusion constraint (handled via application locking)';
+END $$;
 
 -- 7. Recurring Timetable Slots
 CREATE TABLE IF NOT EXISTS timetable_slots (
@@ -119,7 +130,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(150) NOT NULL,
     message TEXT NOT NULL,
-    type VARCHAR(40) NOT NULL, -- 'CONFLICT', 'REALLOCATION', 'APPROVAL_REQ', 'SYSTEM'
+    type VARCHAR(40) NOT NULL,
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
