@@ -1,4 +1,3 @@
-const http = require('http');
 const config = require('../config/config');
 
 class AIClient {
@@ -7,71 +6,37 @@ class AIClient {
     }
 
     async postJson(endpoint, data) {
-        return new Promise((resolve, reject) => {
-            const url = new URL(endpoint, this.baseUrl);
-            const postData = JSON.stringify(data);
-
-            const options = {
-                hostname: url.hostname,
-                port: url.port,
-                path: url.pathname,
+        try {
+            const url = new URL(endpoint, this.baseUrl).toString();
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(postData)
-                },
-                timeout: 3000
-            };
-
-            const req = http.request(options, (res) => {
-                let body = '';
-                res.on('data', chunk => body += chunk);
-                res.on('end', () => {
-                    try {
-                        const parsed = JSON.parse(body);
-                        resolve(parsed);
-                    } catch (e) {
-                        resolve(null);
-                    }
-                });
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+                signal: controller.signal
             });
-
-            req.on('error', (err) => {
-                // Graceful fallback if AI microservice is not running
-                resolve(null);
-            });
-
-            req.on('timeout', () => {
-                req.destroy();
-                resolve(null);
-            });
-
-            req.write(postData);
-            req.end();
-        });
+            clearTimeout(timer);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) {
+            // Graceful fallback if AI microservice is not reachable
+            return null;
+        }
     }
 
     async getJson(endpoint) {
-        return new Promise((resolve) => {
-            const url = new URL(endpoint, this.baseUrl);
-            const req = http.get(url, { timeout: 3000 }, (res) => {
-                let body = '';
-                res.on('data', chunk => body += chunk);
-                res.on('end', () => {
-                    try {
-                        resolve(JSON.parse(body));
-                    } catch (e) {
-                        resolve(null);
-                    }
-                });
-            });
-
-            req.on('error', () => resolve(null));
-            req.on('timeout', () => {
-                req.destroy();
-                resolve(null);
-            });
-        });
+        try {
+            const url = new URL(endpoint, this.baseUrl).toString();
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) {
+            return null;
+        }
     }
 
     /**

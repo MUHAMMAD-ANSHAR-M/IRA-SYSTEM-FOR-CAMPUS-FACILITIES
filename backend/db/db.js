@@ -1,4 +1,3 @@
-const Database = require('better-sqlite3');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
@@ -11,17 +10,22 @@ if (config.DATABASE_URL) {
     console.log('[DB] Connecting to PostgreSQL at', config.DATABASE_URL.split('@')[1] || 'remote');
     pgPool = new Pool({
         connectionString: config.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        ssl: { rejectUnauthorized: false }
     });
 } else {
-    const dbDir = path.dirname(config.DB_FILE_PATH);
-    if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
+    try {
+        const Database = require('better-sqlite3');
+        const dbDir = path.dirname(config.DB_FILE_PATH);
+        if (!fs.existsSync(dbDir)) {
+            fs.mkdirSync(dbDir, { recursive: true });
+        }
+        console.log('[DB] Initializing SQLite database at:', config.DB_FILE_PATH);
+        sqliteDb = new Database(config.DB_FILE_PATH);
+        sqliteDb.pragma('journal_mode = WAL');
+        sqliteDb.pragma('foreign_keys = ON');
+    } catch (e) {
+        console.error('[DB] SQLite driver not available and no DATABASE_URL configured:', e.message);
     }
-    console.log('[DB] Initializing SQLite database at:', config.DB_FILE_PATH);
-    sqliteDb = new Database(config.DB_FILE_PATH);
-    sqliteDb.pragma('journal_mode = WAL');
-    sqliteDb.pragma('foreign_keys = ON');
 }
 
 /**
@@ -30,17 +34,35 @@ if (config.DATABASE_URL) {
  */
 async function query(sql, params = []) {
     if (pgPool) {
-        // PostgreSQL parameter conversion if needed
         let pgSql = sql;
+
+        // Auto-adapt SQLite dialect to PostgreSQL dialect
+        if (pgSql.includes('INSERT OR IGNORE INTO')) {
+            pgSql = pgSql.replace(/INSERT OR IGNORE INTO/gi, 'INSERT INTO');
+            if (!pgSql.includes('ON CONFLICT')) {
+                pgSql += ' ON CONFLICT DO NOTHING';
+            }
+        }
+
+        // GROUP_CONCAT -> STRING_AGG
+        pgSql = pgSql.replace(/GROUP_CONCAT\(([^)]+)\)/gi, 'STRING_AGG($1::text, \',\')');
+
+        // datetime() / date() SQLite functions -> PostgreSQL casting
+        pgSql = pgSql.replace(/datetime\(([^)]+)\)/gi, '($1::timestamptz)');
+        pgSql = pgSql.replace(/date\(([^)]+)\)/gi, '($1::date)');
+
+        // Parameter conversion ? -> $1, $2, ...
         let paramIndex = 1;
         while (pgSql.includes('?')) {
             pgSql = pgSql.replace('?', `$${paramIndex++}`);
         }
+
         const res = await pgPool.query(pgSql, params);
-        return { rows: res.rows, rowCount: res.rowCount };
+        return { rows: res.rows || [], rowCount: res.rowCount || 0 };
     } else {
-        // SQLite
-        // Convert $1, $2 back to ? if PostgreSQL syntax was passed
+        if (!sqliteDb) {
+            throw new Error("No active database connection available.");
+        }
         let sqSql = sql.replace(/\$\d+/g, '?');
         const trimmed = sqSql.trim().toUpperCase();
 
@@ -79,9 +101,31 @@ async function transaction(callback) {
         try {
             await client.query('BEGIN');
             const result = await callback({
-                query: async (text, params) => client.query(text, params),
-                getOne: async (text, params) => {
-                    const r = await client.query(text, params);
+                query: async (text, params = []) => {
+                    let pgSql = text;
+                    if (pgSql.includes('INSERT OR IGNORE INTO')) {
+                        pgSql = pgSql.replace(/INSERT OR IGNORE INTO/gi, 'INSERT INTO');
+                        if (!pgSql.includes('ON CONFLICT')) {
+                            pgSql += ' ON CONFLICT DO NOTHING';
+                        }
+                    }
+                    pgSql = pgSql.replace(/GROUP_CONCAT\(([^)]+)\)/gi, 'STRING_AGG($1::text, \',\')');
+                    pgSql = pgSql.replace(/datetime\(([^)]+)\)/gi, '($1::timestamptz)');
+                    pgSql = pgSql.replace(/date\(([^)]+)\)/gi, '($1::date)');
+
+                    let paramIndex = 1;
+                    while (pgSql.includes('?')) {
+                        pgSql = pgSql.replace('?', `$${paramIndex++}`);
+                    }
+                    return client.query(pgSql, params);
+                },
+                getOne: async (text, params = []) => {
+                    let pgSql = text;
+                    let paramIndex = 1;
+                    while (pgSql.includes('?')) {
+                        pgSql = pgSql.replace('?', `$${paramIndex++}`);
+                    }
+                    const r = await client.query(pgSql, params);
                     return r.rows[0] || null;
                 }
             });
@@ -94,7 +138,9 @@ async function transaction(callback) {
             client.release();
         }
     } else {
-        // Safe sequential execution for SQLite transactions
+        if (!sqliteDb) {
+            throw new Error("No active SQLite connection.");
+        }
         return new Promise((resolve, reject) => {
             sqliteTxLock = sqliteTxLock.then(async () => {
                 try {

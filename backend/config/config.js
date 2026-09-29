@@ -3,7 +3,9 @@ require('dotenv').config();
 
 let aiServiceUrl = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
 if (aiServiceUrl && !aiServiceUrl.startsWith('http://') && !aiServiceUrl.startsWith('https://')) {
-    aiServiceUrl = `http://${aiServiceUrl}`;
+    aiServiceUrl = (aiServiceUrl.includes('localhost') || aiServiceUrl.includes('127.0.0.1'))
+        ? `http://${aiServiceUrl}`
+        : `https://${aiServiceUrl}`;
 }
 
 module.exports = {
